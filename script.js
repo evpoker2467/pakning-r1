@@ -19,8 +19,8 @@ const chatContainer = document.querySelector('.app-container');
 const modeSwitchBtn = document.getElementById('mode-switch-btn');
 const miniModeIndicator = document.getElementById('mini-mode-indicator');
 
-// Replace hardcoded API key with a safer approach
-const DEFAULT_API_KEY = ''; // Empty by default - will prompt user when needed
+// Replace hardcoded API key with user's OpenRouter key
+const DEFAULT_API_KEY = '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';
 
 // API configuration
 const API_URL = 'https://openrouter.ai/api/v1/chat/completions';
@@ -587,61 +587,81 @@ async function sendMessageToAPI(userMessage) {
     // Note: Thinking message is already created by showThinkingIndicator()
     // No need to create another one here
     
-    // Note: User message is already added to history in handleSendMessage()
-    // No need to add it again here
-    
-    // Prepare API request options
-    const apiEndpoint = 'https://api.qwen.ai/v1/chat/completions';
-    const apiKey = localStorage.getItem('qwen_api_key') || DEFAULT_API_KEY; // Fallback to empty key if none in localStorage
-    
-    const requestOptions = {
-        method: 'POST',
-        headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${apiKey}`,
-            'X-App-Name': 'PAKNING R1'
-        },
-        body: JSON.stringify({
-            model: 'qwen-max',
-            messages: messagesHistory,
-            temperature: reasoningModes[currentMode].temperature,
-            max_tokens: reasoningModes[currentMode].maxTokens
-        })
-    };
-    
     try {
-        // Try using Qwen API first
-        const response = await fetch(apiEndpoint, requestOptions);
+        // Prepare API request options
+        const apiEndpoint = 'https://api.qwen.ai/v1/chat/completions';
+        const apiKey = localStorage.getItem('qwen_api_key') || DEFAULT_API_KEY;
         
-        if (!response.ok) {
-            const errorData = await response.json().catch(() => ({}));
-            console.error('Qwen API Error:', errorData);
+        const requestOptions = {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${apiKey}`,
+                'X-App-Name': 'PAKNING R1'
+            },
+            body: JSON.stringify({
+                model: 'qwen-max',
+                messages: messagesHistory,
+                temperature: reasoningModes[currentMode].temperature,
+                max_tokens: reasoningModes[currentMode].maxTokens
+            })
+        };
+        
+        // Try using Qwen API first
+        let response;
+        try {
+            response = await fetch(apiEndpoint, requestOptions);
             
+            if (!response.ok) {
+                console.warn('Qwen API error, trying fallback API...');
+                throw new Error('Qwen API failed');
+            }
+            
+            const data = await response.json();
+            const assistantResponse = data.choices[0].message.content;
+            
+            // Add response to history
+            messagesHistory.push({
+                role: 'assistant',
+                content: assistantResponse
+            });
+            
+            // Display response
+            addMessageToChat(assistantResponse, 'bot');
+            
+            // Update chat session in storage
+            updateChatSession();
+            
+            return assistantResponse;
+        } catch (qwenError) {
             // Try using the fallback OpenRouter API
             return await useFallbackAPI(userMessage);
         }
+    } catch (error) {
+        console.error('All API calls failed:', error);
         
-        const data = await response.json();
-        const assistantResponse = data.choices[0].message.content;
+        // Display a user-friendly error message that doesn't rely on API
+        const errorMessage = "I'm currently having trouble connecting to my knowledge servers. This could be due to high demand or network issues. Please try again in a few moments.";
         
-        // Add response to history
+        // Add error response to history
         messagesHistory.push({
             role: 'assistant',
-            content: assistantResponse
+            content: errorMessage
         });
         
-        // Display response
-        addMessageToChat(assistantResponse, 'bot');
+        // Remove thinking indicator if present
+        const thinkingMsg = chatMessages.querySelector('.message.bot.thinking');
+        if (thinkingMsg) {
+            thinkingMsg.remove();
+        }
+        
+        // Display error message
+        addMessageToChat(errorMessage, 'bot');
         
         // Update chat session in storage
         updateChatSession();
         
-        return assistantResponse;
-    } catch (error) {
-        console.error('API Error:', error);
-        
-        // Try using the fallback API
-        return await useFallbackAPI(userMessage);
+        return errorMessage;
     }
 }
 
@@ -649,11 +669,6 @@ async function sendMessageToAPI(userMessage) {
 async function useFallbackAPI(userMessage) {
     try {
         console.log('Using fallback API (OpenRouter)...');
-        
-        // Note: No need to add user message to history again
-        // It's already added in handleSendMessage()
-        
-        // Note: Thinking indicator is already shown in showThinkingIndicator()
         
         const fallbackRequestOptions = {
             method: 'POST',
@@ -674,9 +689,7 @@ async function useFallbackAPI(userMessage) {
         const response = await fetch(API_URL, fallbackRequestOptions);
         
         if (!response.ok) {
-            const errorText = await response.text();
-            console.error('Fallback API Error:', errorText);
-            throw new Error('Failed to get a response from both APIs');
+            throw new Error('Fallback API failed');
         }
         
         const data = await response.json();
@@ -727,45 +740,91 @@ function handleSendMessage() {
     // Show thinking indicator based on current mode
     showThinkingIndicator();
     
-    // Check if API key exists, if not prompt the user
-    if (!localStorage.getItem('qwen_api_key') && !DEFAULT_API_KEY) {
-        promptAPIKey();
-        return;
-    }
+    // Send to API with timeout for better error handling
+    const apiTimeout = setTimeout(() => {
+        // If this runs, the API call has taken too long
+        handleAPITimeout();
+    }, 30000); // 30 second timeout
     
     // Send to API
-    sendMessageToAPI(message).then(() => {
-        // Reset waiting state
-        isWaitingForResponse = false;
-        sendButton.disabled = false;
-        userInput.disabled = false;
-        userInput.focus();
-        
-        // Update chat session in storage
-        updateChatSession();
-    }).catch(error => {
-        console.error('Error sending message:', error);
-        
-        // Display error message
-        addMessageToChat(`Sorry, I encountered an error: ${error.message}. Please try again.`, 'bot');
-        
-        // Reset waiting state
-        isWaitingForResponse = false;
-        sendButton.disabled = false;
-        userInput.disabled = false;
-        userInput.focus();
-        
-        // Add error to history
-        messagesHistory.push({
-            role: 'assistant',
-            content: `Sorry, I encountered an error: ${error.message}. Please try again.`
+    sendMessageToAPI(message)
+        .then(() => {
+            clearTimeout(apiTimeout); // Clear the timeout since we got a response
+            
+            // Reset waiting state
+            isWaitingForResponse = false;
+            sendButton.disabled = false;
+            userInput.disabled = false;
+            userInput.focus();
+            
+            // Update chat session in storage
+            updateChatSession();
+        })
+        .catch(error => {
+            clearTimeout(apiTimeout); // Clear the timeout
+            console.error('Error sending message:', error);
+            
+            // Handle the error by showing a friendly message
+            handleAPIError(error);
         });
-        
-        // Create a new chat for next interaction
-        setTimeout(() => {
-            createNewChat();
-        }, 2000);
+}
+
+// Handle API timeout
+function handleAPITimeout() {
+    console.error('API request timed out');
+    
+    // Remove thinking indicator if present
+    const thinkingMsg = chatMessages.querySelector('.message.bot.thinking');
+    if (thinkingMsg) {
+        thinkingMsg.remove();
+    }
+    
+    // Display timeout message
+    const timeoutMessage = "I'm sorry, but it's taking longer than expected to generate a response. This might be due to high demand or connectivity issues. Please try again.";
+    addMessageToChat(timeoutMessage, 'bot');
+    
+    // Add to history
+    messagesHistory.push({
+        role: 'assistant',
+        content: timeoutMessage
     });
+    
+    // Reset waiting state
+    isWaitingForResponse = false;
+    sendButton.disabled = false;
+    userInput.disabled = false;
+    userInput.focus();
+    
+    // Update chat session in storage
+    updateChatSession();
+}
+
+// Handle API error
+function handleAPIError(error) {
+    // Remove thinking indicator if present
+    const thinkingMsg = chatMessages.querySelector('.message.bot.thinking');
+    if (thinkingMsg) {
+        thinkingMsg.remove();
+    }
+    
+    // Display error message
+    const errorMessage = "I apologize, but I encountered an error while processing your request. This might be due to connectivity issues or temporary service disruption. Please try again later.";
+    addMessageToChat(errorMessage, 'bot');
+    
+    // Add to history
+    messagesHistory.push({
+        role: 'assistant',
+        content: errorMessage
+    });
+    
+    // Reset waiting state
+    isWaitingForResponse = false;
+    sendButton.disabled = false;
+    userInput.disabled = false;
+    userInput.focus();
+    
+    // Update chat session in storage
+    updateChatSession();
 }
 
 // Function to auto-resize textarea
@@ -1332,12 +1391,12 @@ function updateChatSession() {
 
 // Function to test API connection
 async function testAPIConnection() {
-    // Check if API key is set
-    const apiKey = localStorage.getItem('qwen_api_key') || '';
+    // Always use the default key
+    const apiKey = DEFAULT_API_KEY;
     
-    // If no Qwen API key, just use the fallback OpenRouter API instead of prompting
+    // If no key, just return
     if (!apiKey) {
-        console.log('No Qwen API key found, using OpenRouter fallback by default');
+        console.log('No API key available, skipping connection test');
         return;
     }
     
@@ -1374,25 +1433,15 @@ async function testAPIConnection() {
             console.log('API connection test successful!');
         }
     } catch (error) {
-        console.error('API connection test error:', error);
+        console.error('API connection test failed:', error);
     }
 }
 
-// Function to prompt for API key - Modified to be optional
+// Function to prompt for API key - Modified to do nothing
 function promptAPIKey(message = 'Please enter your Qwen API key to use PAKNING R1:') {
-    const useDefault = confirm(message + "\n\nPress Cancel to use the default API instead.");
-    
-    if (useDefault) {
-        const apiKey = prompt("Enter your Qwen API key:");
-        if (apiKey) {
-            localStorage.setItem('qwen_api_key', apiKey);
-            testAPIConnection(); // Test the new key
-        }
-    } else {
-        // User chose to use the default API
-        localStorage.removeItem('qwen_api_key');
-        console.log('Using default OpenRouter API');
-    }
+    // Don't prompt for API key in public deployment
+    console.log('Using default API key');
+    return;
 }
 
 // Function to cycle through modes
