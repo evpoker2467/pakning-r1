@@ -55,9 +55,18 @@
  
  // Function to check if API key is valid
  function hasValidApiKey() {
-     return apiKey && 
-            apiKey.trim() !== '' && 
-            (apiKey.startsWith('sk-') || apiKey.startsWith('pk-') || apiKey.startsWith('sk-or-v1-')) && 
+     // If we have a placeholder, the key is not valid
+     if (apiKey === 'NETLIFY_ENV_API_KEY_PLACEHOLDER' || 
+         apiKey === '' || 
+         !apiKey || 
+         apiKey.trim() === '') {
+         return false;
+     }
+     
+     // Check for valid API key formats
+     return (apiKey.startsWith('sk-') || 
+            apiKey.startsWith('pk-') || 
+            apiKey.startsWith('sk-or-v1-')) && 
             apiKey.length > 20;
  }
  
@@ -1196,6 +1205,28 @@
      }
  });
  
+ // Function to show a message to the user
+ function showMessage(message, type = 'info') {
+     const messageDiv = document.createElement('div');
+     messageDiv.className = `message-toast ${type}`;
+     messageDiv.textContent = message;
+     
+     document.body.appendChild(messageDiv);
+     
+     // Show the message
+     setTimeout(() => {
+         messageDiv.classList.add('visible');
+     }, 100);
+     
+     // Hide and remove after 5 seconds
+     setTimeout(() => {
+         messageDiv.classList.remove('visible');
+         setTimeout(() => {
+             document.body.removeChild(messageDiv);
+         }, 300);
+     }, 5000);
+ }
+ 
  // Initialize the app
  document.addEventListener('DOMContentLoaded', async () => {
     console.log('DOM loaded, initializing app...');
@@ -1207,9 +1238,12 @@
     console.log('API key loaded, checking validity...');
     console.log('API key valid:', hasValidApiKey());
     
-    // If we don't have a valid API key, log an error
+    // If we don't have a valid API key, log an error and show message to user
     if (!hasValidApiKey()) {
         console.error('No valid API key found. Please set up API_KEY in Netlify environment variables.');
+        showMessage('API Key Missing: Please check Netlify environment variables', 'error');
+    } else {
+        console.log('API key successfully loaded');
     }
     
     // Set up event listeners

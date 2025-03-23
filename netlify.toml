@@ -7,12 +7,18 @@
   to = "/index.html"
   status = 200
 
-# Inject environment variables
+[build.environment]
+  # These are build-time environment variables
+  NODE_ENV = "production"
+
 [context.production.environment]
-  NETLIFY = "true"
+  # Environment variables for production deploy
+  API_KEY = ""  # Leave this blank, will be set in Netlify UI
 
 [context.branch-deploy.environment]
-  NETLIFY = "true"
+  # Environment variables for branch deploys
+  API_KEY = ""  # Leave this blank, will be set in Netlify UI
 
 [context.deploy-preview.environment]
-  NETLIFY = "true" 
+  # Environment variables for deploy previews
+  API_KEY = ""  # Leave this blank, will be set in Netlify UI 

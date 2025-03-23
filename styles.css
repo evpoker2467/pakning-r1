@@ -1912,4 +1912,43 @@ body.resizing .sidebar-resizer {
     .contact-info {
         margin-top: 30px;
     }
+}
+
+/* Message Toast */
+.message-toast {
+    position: fixed;
+    top: 20px;
+    right: 20px;
+    padding: 12px 20px;
+    border-radius: 6px;
+    background-color: #333;
+    color: white;
+    font-size: 14px;
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
+    z-index: 1000;
+    transform: translateY(-20px);
+    opacity: 0;
+    transition: transform 0.3s, opacity 0.3s;
+    max-width: 300px;
+}
+
+.message-toast.visible {
+    transform: translateY(0);
+    opacity: 1;
+}
+
+.message-toast.error {
+    background-color: #e74c3c;
+}
+
+.message-toast.success {
+    background-color: #2ecc71;
+}
+
+.message-toast.info {
+    background-color: #3498db;
+}
+
+.message-toast.warning {
+    background-color: #f39c12;
 } 
