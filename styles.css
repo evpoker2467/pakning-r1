@@ -208,31 +208,31 @@ body.resizing .sidebar-resizer::after {
 
 /* Hide/show sidebar button */
 .hide-sidebar-btn {
-    position: absolute;
-    right: -15px;
-    top: 20px;
+    position: fixed;
+    bottom: 300px; /* Position much higher up */
+    left: 20px; /* Place on the left side like the show button */
     background: var(--primary-color);
     color: white;
-    width: 30px;
-    height: 30px;
+    width: 45px;
+    height: 45px;
     border-radius: 50%;
     display: flex;
     align-items: center;
     justify-content: center;
     cursor: pointer;
-    z-index: 11;
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+    z-index: 100;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
     border: none;
     transition: all 0.2s ease;
 }
 
 .hide-sidebar-btn:hover {
     transform: scale(1.1);
-    box-shadow: 0 3px 10px rgba(0, 0, 0, 0.3);
+    box-shadow: 0 3px 10px rgba(0, 0, 0, 0.4);
 }
 
 .light-theme .hide-sidebar-btn {
-    background: linear-gradient(135deg, #6a5af9, #21d07c);
+    background: var(--primary-color);
 }
 
 /* Sidebar collapsed state */
@@ -249,12 +249,12 @@ body.resizing .sidebar-resizer::after {
 /* Show sidebar button that appears when sidebar is hidden */
 .show-sidebar-btn {
     position: fixed;
-    left: 15px;
-    top: 15px;
+    bottom: 300px; /* Position at the same height as hide button */
+    left: 20px;
     background: var(--primary-color);
     color: white;
-    width: 40px;
-    height: 40px;
+    width: 45px;
+    height: 45px;
     border-radius: 50%;
     display: flex;
     align-items: center;
@@ -271,6 +271,8 @@ body.resizing .sidebar-resizer::after {
 
 .show-sidebar-btn.visible {
     visibility: visible;
+    transform: scale(1);
+    opacity: 1;
 }
 
 .show-sidebar-btn:hover {
@@ -279,7 +281,7 @@ body.resizing .sidebar-resizer::after {
 }
 
 .light-theme .show-sidebar-btn {
-    background: linear-gradient(135deg, #6a5af9, #21d07c);
+    background: var(--primary-color);
 }
 
 @media (max-width: 768px) {

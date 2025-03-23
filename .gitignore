@@ -37,4 +37,14 @@ build/
 
 # Netlify
 netlify_deploy/
-.netlify/ 
+.netlify/
+
+# Environment variables
+.env
+
+# Node modules
+node_modules/
+
+# Misc
+.DS_Store
+Thumbs.db 

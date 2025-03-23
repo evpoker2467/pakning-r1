@@ -19,8 +19,69 @@
  const modeSwitchBtn = document.getElementById('mode-switch-btn');
  const miniModeIndicator = document.getElementById('mini-mode-indicator');
  
- // Replace hardcoded API key with a safer approach
- const DEFAULT_API_KEY = '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'; // Using the provided API key
+ // Initialize API key variable 
+ let apiKey = '';
+ 
+ // Function to initialize API key from .env file or local storage
+ async function initializeApiKey() {
+     try {
+         // First try to get from .env file
+         const envApiKey = await getEnvVar('API_KEY', '');
+         
+         if (envApiKey && envApiKey.trim() !== '') {
+             console.log('Using API key from .env file');
+             apiKey = envApiKey;
+             return;
+         }
+         
+         // If not available in .env, try to get from localStorage
+         const storedKey = localStorage.getItem('pakningR1_apiKey');
+         if (storedKey) {
+             console.log('Using API key from localStorage');
+             // Decode and unscramble
+             const scrambledKey = atob(storedKey);
+             const reversedSegments = scrambledKey.split('_').reverse();
+             const segments = reversedSegments.map(segment => segment.split('').reverse().join(''));
+             apiKey = segments.join('');
+         }
+     } catch (error) {
+         console.error('Error initializing API key:', error);
+     }
+ }
+ 
+ // Function to securely store API key
+ function securelyStoreApiKey(rawKey) {
+     if (!rawKey || typeof rawKey !== 'string') return false;
+     
+     try {
+         // Simple validation that it looks like an API key
+         if (!rawKey.startsWith('sk-')) {
+             console.error('Invalid API key format');
+             return false;
+         }
+         
+         // Split the key and reverse segments to make it harder to extract
+         const segments = rawKey.match(/.{1,8}/g) || [];
+         const reversedSegments = segments.map(segment => segment.split('').reverse().join(''));
+         const scrambledKey = reversedSegments.reverse().join('_');
+         const encryptedApiKey = btoa(scrambledKey); // Base64 encode after scrambling
+         localStorage.setItem('pakningR1_apiKey', encryptedApiKey);
+         
+         // Update the current apiKey variable
+         apiKey = rawKey;
+         
+         console.log('API key securely stored');
+         return true;
+     } catch (e) {
+         console.error('Error storing API key:', e);
+         return false;
+     }
+ }
+ 
+ // Function to check if API key is valid
+ function hasValidApiKey() {
+     return apiKey && apiKey.startsWith('sk-');
+ }
  
  // API configuration
  const API_URL = 'https://openrouter.ai/api/v1/chat/completions';
@@ -249,8 +310,8 @@
          if (savedChats) {
              chatSessions = JSON.parse(savedChats);
              
-             // Remove any "Cleared Conversation" entries
-             chatSessions = chatSessions.filter(session => session.title !== "Cleared Conversation");
+             // Remove any chats with "Cleared Chat" in the title
+             chatSessions = chatSessions.filter(session => !session.title.includes('Cleared Chat'));
              
              // Save the cleaned up sessions back to storage
              saveChatsToLocalStorage();
@@ -590,52 +651,103 @@
      // Note: User message is already added to history in handleSendMessage()
      // No need to add it again here
      
-     // Prepare API request options using exact format from qwen api.txt
-     const requestOptions = {
-         method: 'POST',
-         headers: {
-             'Authorization': `Bearer ${DEFAULT_API_KEY}`,
-             'HTTP-Referer': window.location.href, 
-             'X-Title': 'PAKNING R1 Chatbot', 
-             'Content-Type': 'application/json'
-         },
-         body: JSON.stringify({
-             'model': 'qwen/qwq-32b:free',
-             'messages': messagesHistory,
-             'temperature': reasoningModes[currentMode].temperature,
-             'max_tokens': reasoningModes[currentMode].maxTokens
-         })
-     };
+     // Try with current API key
+     let apiError = null;
+     const maxRetries = 2; // Number of retries per key
      
-     try {
-         const response = await fetch(API_URL, requestOptions);
-         
-         if (!response.ok) {
-             const errorText = await response.text();
-             console.error('API Error:', errorText);
-             throw new Error('Failed to get a response from the API');
+     for (let retryCount = 0; retryCount <= maxRetries; retryCount++) {
+         if (retryCount > 0) {
+             console.log(`Retry attempt ${retryCount}...`);
          }
          
-         const data = await response.json();
-         const assistantResponse = data.choices[0].message.content;
+         // Prepare API request options using exact format from qwen api.txt
+         const requestOptions = {
+             method: 'POST',
+             headers: {
+                 'Authorization': `Bearer ${apiKey}`,
+                 'HTTP-Referer': window.location.href, 
+                 'X-Title': 'PAKNING R1 Chatbot', 
+                 'Content-Type': 'application/json'
+             },
+             body: JSON.stringify({
+                 'model': 'qwen/qwq-32b:free',
+                 'messages': messagesHistory,
+                 'temperature': reasoningModes[currentMode].temperature,
+                 'max_tokens': reasoningModes[currentMode].maxTokens
+             })
+         };
          
-         // Add response to history
-         messagesHistory.push({
-             role: 'assistant',
-             content: assistantResponse
-         });
-         
-         // Display response
-         addMessageToChat(assistantResponse, 'bot');
-         
-         // Update chat session in storage
-         updateChatSession();
-         
-         return assistantResponse;
-     } catch (error) {
-         console.error('API Error:', error);
-         throw error;
+         try {
+             console.log(`Sending request to ${API_URL}...`);
+             const response = await fetch(API_URL, requestOptions);
+             
+             const responseText = await response.text();
+             console.log(`API response status: ${response.status}, response:`, responseText);
+             
+             if (!response.ok) {
+                 console.error(`API Error, retry ${retryCount}:`, responseText);
+                 
+                 // If we still have retries left, try again after a delay
+                 if (retryCount < maxRetries) {
+                     const delayMs = 1000 * (retryCount + 1); // Exponential backoff
+                     console.log(`Waiting ${delayMs}ms before retry...`);
+                     await new Promise(resolve => setTimeout(resolve, delayMs));
+                     continue; // Try again
+                 }
+                 
+                 apiError = new Error(`Failed with retry ${retryCount}: ${responseText}`);
+                 break; // Move to next retry
+             }
+             
+             // Try to parse the response JSON
+             let data;
+             try {
+                 data = JSON.parse(responseText);
+             } catch (e) {
+                 console.error("Error parsing JSON response:", e);
+                 throw new Error("Invalid response format from API");
+             }
+             
+             if (!data.choices || !data.choices[0] || !data.choices[0].message) {
+                 console.error("Unexpected API response format:", data);
+                 throw new Error("Unexpected response format from API");
+             }
+             
+             const assistantResponse = data.choices[0].message.content;
+             
+             // Add response to history
+             messagesHistory.push({
+                 role: 'assistant',
+                 content: assistantResponse
+             });
+             
+             // Display response
+             addMessageToChat(assistantResponse, 'bot');
+             
+             // Update chat session in storage
+             updateChatSession();
+             
+             console.log(`Successfully used API key`);
+             return assistantResponse;
+         } catch (error) {
+             console.error(`API Error, retry ${retryCount}:`, error);
+             
+             // If we still have retries left, try again after a delay
+             if (retryCount < maxRetries) {
+                 const delayMs = 1000 * (retryCount + 1); // Exponential backoff
+                 console.log(`Waiting ${delayMs}ms before retry...`);
+                 await new Promise(resolve => setTimeout(resolve, delayMs));
+                 continue; // Try again
+             }
+             
+             apiError = error;
+             break; // Move to next retry
+         }
      }
+     
+     // If we get here, all retries failed
+     console.error("All retries failed:", apiError);
+     throw apiError || new Error('All retries failed');
  }
  
  // Function to handle sending a message
@@ -655,6 +767,13 @@
          role: 'user',
          content: message
      });
+     
+     // Check if we have a valid API key
+     if (!hasValidApiKey()) {
+         console.error('No valid API key found');
+         showApiKeyMissingMessage();
+         return;
+     }
      
      // Set waiting state
      isWaitingForResponse = true;
@@ -677,8 +796,54 @@
      }).catch(error => {
          console.error('Error sending message:', error);
          
-         // Display error message
-         addMessageToChat(`Sorry, I encountered an error: ${error.message}. Please try again.`, 'bot');
+         // Display more user-friendly error message
+         let errorMessage = 'The AI service is currently unavailable. This could be due to:';
+         
+         // Create a message with error details and suggestions
+         const errorDiv = document.createElement('div');
+         errorDiv.className = 'error-message';
+         errorDiv.innerHTML = `
+             <p>${errorMessage}</p>
+             <ul>
+                 <li>Service may be temporarily down</li>
+                 <li>Network connection issues</li>
+             </ul>
+             <p>You can:</p>
+             <ul>
+                 <li>Try again in a few moments</li>
+                 <li>Refresh the page</li>
+                 <li>Check your internet connection</li>
+             </ul>
+         `;
+         
+         // Remove any thinking indicators
+         const thinkingIndicators = document.querySelectorAll('.message.bot.thinking');
+         thinkingIndicators.forEach(indicator => indicator.remove());
+         
+         // Create a message container
+         const messageDiv = document.createElement('div');
+         messageDiv.classList.add('message', 'bot', 'error');
+         
+         const avatarDiv = document.createElement('div');
+         avatarDiv.classList.add('message-avatar', 'bot');
+         avatarDiv.textContent = 'P';
+         
+         const contentDiv = document.createElement('div');
+         contentDiv.classList.add('message-content');
+         contentDiv.appendChild(errorDiv);
+         
+         messageDiv.appendChild(avatarDiv);
+         messageDiv.appendChild(contentDiv);
+         
+         // Add to chat
+         chatMessages.appendChild(messageDiv);
+         chatMessages.scrollTop = chatMessages.scrollHeight;
+         
+         // Add simple error message to history
+         messagesHistory.push({
+             role: 'assistant',
+             content: 'Sorry, the AI service is currently unavailable. Please try again later.'
+         });
          
          // Reset waiting state
          isWaitingForResponse = false;
@@ -686,16 +851,8 @@
          userInput.disabled = false;
          userInput.focus();
          
-         // Add error to history
-         messagesHistory.push({
-             role: 'assistant',
-             content: `Sorry, I encountered an error: ${error.message}. Please try again.`
-         });
-         
-         // Create a new chat for next interaction
-         setTimeout(() => {
-             createNewChat();
-         }, 2000);
+         // Update chat session in storage
+         updateChatSession();
      });
  }
  
@@ -718,7 +875,7 @@
      // Clear messages on screen
      chatMessages.innerHTML = '';
      
-     // Remove the session from storage
+     // Remove the session from storage and sidebar
      const sessionIndex = chatSessions.findIndex(s => s.id === currentSessionId);
      if (sessionIndex !== -1) {
          // Remove from array
@@ -733,15 +890,18 @@
          // Save changes
          saveChatsToLocalStorage();
          
-         // Show welcome screen instead of creating a new chat
+         // Show welcome screen
          showWelcomeScreen();
+         
+         // Create a new chat session
+         createNewChat();
      }
  }
  
  // Function to show the welcome screen
  function showWelcomeScreen() {
-     // Set a temporary session ID
-     currentSessionId = "welcome-" + Date.now().toString();
+     // Keep the current session ID instead of replacing it
+     // This ensures we don't lose the reference to the current chat
      
      // Clear messages and show welcome screen
      chatMessages.innerHTML = `
@@ -790,8 +950,8 @@
          </div>
      `;
      
-     // Update chat title
-     document.title = 'New Conversation - PAKNING R1';
+     // Update chat title without changing the session ID
+     document.title = 'PAKNING R1';
      
      // Hide mode indicator
      currentModeIndicator.classList.remove('visible');
@@ -1056,51 +1216,49 @@
  });
  
  // Initialize the app
- document.addEventListener('DOMContentLoaded', () => {
-     // Clear all localStorage to reset the application
-     localStorage.removeItem('pakningR1_chatSessions');
-     localStorage.removeItem('pakningR1_sidebarWidth');
-     localStorage.removeItem('pakningR1_sidebarCollapsed');
-     
-     // Set up event listeners
-     setupEventListeners();
-     
-     // Load saved chats from localStorage - will be empty after clearing
-     loadChatsFromLocalStorage();
-     
-     // Populate chat history
-     populateChatHistory();
-     
-     // Get theme preference
-     loadThemePreference();
-     
-     // Load sidebar state
-     loadSidebarState();
-     
-     // Initialize sidebar resize
-     initSidebarResize();
-     
-     // Test API connectivity
-     testAPIConnection();
-     
-     // Initialize with an existing chat or create a new one
-     if (chatSessions.length > 0) {
-         // Load the most recent chat
-         const mostRecentChat = chatSessions[0]; // Assuming chats are sorted by date
-         loadChatSession(mostRecentChat.id);
-         
-         // Mark the most recent chat as active in the sidebar
-         const historyItem = document.querySelector(`.history-item[data-id="${mostRecentChat.id}"]`);
-         if (historyItem) {
-             historyItem.classList.add('active');
-         }
-     } else {
-         // Create a new chat if none exists
-         createNewChat();
-     }
-     
-     // Set focus to input
-     userInput.focus();
+ document.addEventListener('DOMContentLoaded', async () => {
+    // Initialize API key from .env file or local storage
+    await initializeApiKey();
+    
+    // Set up event listeners
+    setupEventListeners();
+    
+    // Load saved chats from localStorage
+    loadChatsFromLocalStorage();
+    
+    // Populate chat history
+    populateChatHistory();
+    
+    // Get theme preference
+    loadThemePreference();
+    
+    // Load sidebar state
+    loadSidebarState();
+    
+    // Initialize sidebar resize
+    initSidebarResize();
+    
+    // Test API connectivity
+    testAPIConnection();
+    
+    // Initialize with an existing chat or create a new one
+    if (chatSessions.length > 0) {
+        // Load the most recent chat
+        const mostRecentChat = chatSessions[0]; // Assuming chats are sorted by date
+        loadChatSession(mostRecentChat.id);
+        
+        // Mark the most recent chat as active in the sidebar
+        const historyItem = document.querySelector(`.history-item[data-id="${mostRecentChat.id}"]`);
+        if (historyItem) {
+            historyItem.classList.add('active');
+        }
+    } else {
+        // Create a new chat if none exists
+        createNewChat();
+    }
+    
+    // Set focus to input
+    userInput.focus();
  });
  
  // Set up event listeners
@@ -1268,14 +1426,19 @@
  
  // Function to test API connection
  async function testAPIConnection() {
-     console.log('Testing API connection with configured API key');
+     console.log('Testing API connection...');
      
-     // Test the connection using exact format from qwen api.txt
+     if (!hasValidApiKey()) {
+         console.error('No valid API key found');
+         showApiKeyMissingMessage();
+         return;
+     }
+     
      try {
          const response = await fetch(API_URL, {
              method: 'POST',
              headers: {
-                 'Authorization': `Bearer ${DEFAULT_API_KEY}`,
+                 'Authorization': `Bearer ${apiKey}`,
                  'HTTP-Referer': window.location.href,
                  'X-Title': 'PAKNING R1 Chatbot',
                  'Content-Type': 'application/json'
@@ -1297,16 +1460,91 @@
              })
          });
          
-         if (!response.ok) {
-             console.error('API connection test failed');
+         // Try to read the response regardless of success/failure
+         const responseText = await response.text();
+         console.log(`API connection test response: ${response.status}`, responseText);
+         
+         if (response.ok) {
+             console.log(`API connection test successful!`);
+             return;
          } else {
-             console.log('API connection test successful!');
+             console.error(`API connection test failed with status: ${response.status}`);
          }
      } catch (error) {
-         console.error('API connection test error:', error);
+         console.error(`API connection test error:`, error);
      }
+     
+     // Display a message in the chat
+     showApiConnectionErrorMessage();
  }
  
+ // Function to show API key missing message
+ function showApiKeyMissingMessage() {
+     const errorDiv = document.createElement('div');
+     errorDiv.className = 'api-error-notice';
+     errorDiv.innerHTML = `
+         <div class="api-error-content">
+             <h3><i class="fas fa-key"></i> API Key Required</h3>
+             <p>No valid API key found. Please enter a valid OpenRouter API key below:</p>
+             <div class="api-key-input-container">
+                 <input type="password" id="api-key-input" placeholder="Enter your API key (starts with sk-or-v1-...)">
+                 <button id="save-api-key-btn">Save Key</button>
+             </div>
+             <p class="small-text">You can get a free API key from <a href="https://openrouter.ai" target="_blank">OpenRouter.ai</a></p>
+         </div>
+     `;
+     
+     // Add to chat container
+     chatMessages.appendChild(errorDiv);
+     chatMessages.scrollTop = chatMessages.scrollHeight;
+     
+     // Add event listener to save button
+     const saveButton = document.getElementById('save-api-key-btn');
+     const apiKeyInput = document.getElementById('api-key-input');
+     
+     saveButton.addEventListener('click', () => {
+         const newKey = apiKeyInput.value.trim();
+         if (securelyStoreApiKey(newKey)) {
+             errorDiv.innerHTML = `
+                 <div class="api-error-content success">
+                     <h3><i class="fas fa-check-circle"></i> API Key Saved</h3>
+                     <p>Your API key has been securely saved. Testing connection now...</p>
+                 </div>
+             `;
+             setTimeout(() => {
+                 errorDiv.remove();
+                 testAPIConnection();
+             }, 2000);
+         } else {
+             errorDiv.querySelector('.api-error-content').innerHTML += `
+                 <p class="error-text">Invalid API key format. Please enter a valid key that starts with sk-or-v1-</p>
+             `;
+         }
+     });
+ }
+ 
+ // Function to show API connection error message
+ function showApiConnectionErrorMessage() {
+     const errorDiv = document.createElement('div');
+     errorDiv.className = 'api-error-notice';
+     errorDiv.innerHTML = `
+         <div class="api-error-content">
+             <h3><i class="fas fa-exclamation-triangle"></i> API Connection Issue</h3>
+             <p>Unable to connect to the AI service. There might be an issue with the API key or the service.</p>
+             <button id="change-api-key-btn">Change API Key</button>
+         </div>
+     `;
+     
+     // Add to chat container
+     chatMessages.appendChild(errorDiv);
+     chatMessages.scrollTop = chatMessages.scrollHeight;
+     
+     // Add event listener to change key button
+     document.getElementById('change-api-key-btn').addEventListener('click', () => {
+         errorDiv.remove();
+         showApiKeyMissingMessage();
+     });
+ } 
  // Function to cycle through modes
  function cycleReasoningMode() {
      const modes = Object.keys(reasoningModes);
@@ -1330,8 +1568,7 @@
      if (modeDescriptionText) {
          modeDescriptionText.textContent = reasoningModes[nextMode].description;
      }
- }
- 
+ } 
  // Add functions to show modal dialogs for Pricing and Contact
  function showPricingModal() {
      const modal = document.createElement('div');
@@ -1492,4 +1729,39 @@
      setTimeout(() => {
          modal.classList.add('open');
      }, 10);
+ }
+ 
+ // Function to populate chat history in the sidebar
+ function populateChatHistory() {
+     const chatHistory = document.querySelector('.chat-history');
+     if (!chatHistory) return;
+     
+     // Clear existing content
+     chatHistory.innerHTML = '';
+     
+     // Make sure chatSessions array exists and has entries
+     if (chatSessions && chatSessions.length > 0) {
+         // Sort chats by creation date (newest first)
+         chatSessions.sort((a, b) => new Date(b.created) - new Date(a.created));
+         
+         // Create history items for each chat session
+         chatSessions.forEach(session => {
+             const historyItem = document.createElement('div');
+             historyItem.classList.add('history-item');
+             historyItem.dataset.id = session.id;
+             
+             const icon = document.createElement('i');
+             icon.classList.add('fas', 'fa-comment');
+             
+             const span = document.createElement('span');
+             span.textContent = session.title;
+             
+             historyItem.appendChild(icon);
+             historyItem.appendChild(span);
+             
+             chatHistory.appendChild(historyItem);
+         });
+     }
  } 
+
+

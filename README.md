@@ -1,13 +1,30 @@
-# PAKNING R1 AI Chat Application
+# PAKNING R1 - Advanced AI Assistant
 
-An advanced AI chat application with reasoning capabilities, designed for problem-solving and thoughtful responses.
+## Setup
+
+### API Key Configuration
+
+To use this application, you need to set up your API key:
+
+1. Create a `.env` file in the root directory
+2. Add your OpenRouter API key in the following format:
+   ```
+   API_KEY=your-api-key-here
+   ```
+3. Alternatively, you can enter your API key in the application when prompted
+
+## Running the Application
+
+1. Open `index.html` in a web browser
+2. If no API key is found, you will be prompted to enter one
+3. Start chatting with PAKNING R1
 
 ## Features
 
-- Two reasoning modes: Default and DeepThink
-- Modern responsive UI with light/dark themes
-- Collapsible sidebar with chat history
-- API integration with Qwen AI
+- Advanced reasoning AI with two different thinking modes
+- Chat history with saving/loading functionality 
+- Responsive design for desktop and mobile use
+- Light/dark theme support
 
 ## Deployment
 
