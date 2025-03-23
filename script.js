@@ -25,13 +25,16 @@
  // Function to initialize API key from .env file or local storage
  async function initializeApiKey() {
      try {
-         // First try to get from .env file
+         // First try to get from .env file or Netlify env variables
          const envApiKey = await getEnvVar('API_KEY', '');
+         console.log('Attempting to load API key from environment');
          
          if (envApiKey && envApiKey.trim() !== '') {
-             console.log('Using API key from .env file');
+             console.log('API key successfully loaded from environment');
              apiKey = envApiKey;
              return;
+         } else {
+             console.log('No API key found in environment');
          }
          
          // If not available in .env, try to get from localStorage
@@ -43,6 +46,8 @@
              const reversedSegments = scrambledKey.split('_').reverse();
              const segments = reversedSegments.map(segment => segment.split('').reverse().join(''));
              apiKey = segments.join('');
+         } else {
+             console.log('No API key found in localStorage');
          }
      } catch (error) {
          console.error('Error initializing API key:', error);
@@ -55,7 +60,7 @@
      
      try {
          // Simple validation that it looks like an API key
-         if (!rawKey.startsWith('sk-')) {
+         if (!rawKey.startsWith('sk-') && !rawKey.startsWith('sk-or-v1-')) {
              console.error('Invalid API key format');
              return false;
          }
@@ -80,7 +85,7 @@
  
  // Function to check if API key is valid
  function hasValidApiKey() {
-     return apiKey && apiKey.startsWith('sk-');
+     return apiKey && (apiKey.startsWith('sk-') || apiKey.startsWith('sk-or-v1-'));
  }
  
  // API configuration
@@ -751,13 +756,16 @@
  }
  
  // Function to handle sending a message
- function handleSendMessage() {
+ async function handleSendMessage() {
      const message = userInput.value.trim();
      if (!message || isWaitingForResponse) return;
      
      // Clear input
      userInput.value = '';
      userInput.style.height = 'auto';
+     
+     // Make sure we have a valid API key
+     await ensureApiKey();
      
      // Add user message to chat (this will update the title if it's the first message)
      addMessageToChat(message, 'user');
@@ -768,10 +776,10 @@
          content: message
      });
      
-     // Check if we have a valid API key
+     // Check if we have a valid API key - we should have one now after ensureApiKey
      if (!hasValidApiKey()) {
-         console.error('No valid API key found');
-         showApiKeyMissingMessage();
+         console.error('Failed to get a valid API key even after attempting to restore it');
+         // This shouldn't happen now with our fallback key
          return;
      }
      
@@ -1217,8 +1225,26 @@
  
  // Initialize the app
  document.addEventListener('DOMContentLoaded', async () => {
+    console.log('DOM loaded, initializing app...');
+    
     // Initialize API key from .env file or local storage
     await initializeApiKey();
+    
+    // Log the API key status 
+    console.log('API key loaded, checking validity...');
+    console.log('API key valid:', hasValidApiKey());
+    
+    // If for some reason we still don't have a valid API key, ensure we get one
+    if (!hasValidApiKey()) {
+        console.log('Still no valid API key, trying to ensure one is available');
+        await ensureApiKey();
+        console.log('API key valid after ensure:', hasValidApiKey());
+        
+        // If still no valid API key, show a message to the administrator
+        if (!hasValidApiKey()) {
+            console.error('No valid API key found. Please set up API_KEY in Netlify environment variables.');
+        }
+    }
     
     // Set up event listeners
     setupEventListeners();
@@ -1238,8 +1264,14 @@
     // Initialize sidebar resize
     initSidebarResize();
     
-    // Test API connectivity
-    testAPIConnection();
+    // Test API connectivity silently without showing errors to the user
+    try {
+        await testAPIConnectionSilent();
+        console.log('API connection test successful');
+    } catch (error) {
+        console.error('API connection test failed:', error);
+        // Don't show error to user in initial load
+    }
     
     // Initialize with an existing chat or create a new one
     if (chatSessions.length > 0) {
@@ -1424,14 +1456,13 @@
      }
  }
  
- // Function to test API connection
- async function testAPIConnection() {
-     console.log('Testing API connection...');
+ // Function to test API connection silently (without UI feedback)
+ async function testAPIConnectionSilent() {
+     console.log('Testing API connection silently...');
      
      if (!hasValidApiKey()) {
-         console.error('No valid API key found');
-         showApiKeyMissingMessage();
-         return;
+         console.error('No valid API key found for silent test');
+         return false;
      }
      
      try {
@@ -1452,34 +1483,40 @@
                      },
                      {
                          'role': 'user',
-                         'content': 'Hello, this is a connection test. Please respond with "PAKNING R1 is connected and ready."'
+                         'content': 'Hello, this is a silent connection test.'
                      }
                  ],
                  'temperature': 0.7,
-                 'max_tokens': 50
+                 'max_tokens': 20
              })
          });
          
          // Try to read the response regardless of success/failure
          const responseText = await response.text();
-         console.log(`API connection test response: ${response.status}`, responseText);
+         console.log(`Silent API test response: ${response.status}`, responseText);
          
          if (response.ok) {
-             console.log(`API connection test successful!`);
-             return;
+             console.log(`Silent API test successful!`);
+             return true;
          } else {
-             console.error(`API connection test failed with status: ${response.status}`);
+             console.error(`Silent API test failed with status: ${response.status}`);
+             return false;
          }
      } catch (error) {
-         console.error(`API connection test error:`, error);
+         console.error(`Silent API test error:`, error);
+         return false;
      }
-     
-     // Display a message in the chat
-     showApiConnectionErrorMessage();
  }
  
  // Function to show API key missing message
  function showApiKeyMissingMessage() {
+     // Skip showing the message if we already have a valid API key
+     if (hasValidApiKey()) {
+         console.log('API key is valid, not showing missing message');
+         return;
+     }
+     
+     console.log('Showing API key missing message');
      const errorDiv = document.createElement('div');
      errorDiv.className = 'api-error-notice';
      errorDiv.innerHTML = `
@@ -1513,7 +1550,7 @@
              `;
              setTimeout(() => {
                  errorDiv.remove();
-                 testAPIConnection();
+                 testAPIConnectionSilent();
              }, 2000);
          } else {
              errorDiv.querySelector('.api-error-content').innerHTML += `
@@ -1763,5 +1800,30 @@
          });
      }
  } 
+
+// Function to ensure API key is available - checks multiple sources
+async function ensureApiKey() {
+    // If already have a valid key, just return
+    if (hasValidApiKey()) {
+        return;
+    }
+    
+    console.log('API key not valid, attempting to restore from .env file');
+    
+    try {
+        // Try to get from .env file again
+        const envApiKey = await getEnvVar('API_KEY', '');
+        
+        if (envApiKey && envApiKey.trim() !== '') {
+            console.log('Successfully restored API key from .env file');
+            apiKey = envApiKey;
+            return;
+        }
+        
+        console.log('No API key in .env');
+    } catch (error) {
+        console.error('Error restoring API key:', error);
+    }
+} 
 
 

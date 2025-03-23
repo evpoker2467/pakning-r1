@@ -11,6 +11,17 @@
     <!-- Add font preloading for better performance with CJK text -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <!-- Netlify Identity Widget -->
+    <script src="https://identity.netlify.com/v1/netlify-identity-widget.js"></script>
+    <!-- Initialize Netlify Identity -->
+    <script>
+        // This script sets up Netlify Identity
+        if (window.netlifyIdentity) {
+            window.netlifyIdentity.on("init", user => {
+                console.log("Netlify Identity initialized");
+            });
+        }
+    </script>
 </head>
 <body>
     <div class="app-container">

@@ -4,20 +4,36 @@
 
 ### API Key Configuration
 
-To use this application, you need to set up your API key:
+There are two ways to set up your API key:
 
+#### Local Development
 1. Create a `.env` file in the root directory
 2. Add your OpenRouter API key in the following format:
    ```
    API_KEY=your-api-key-here
    ```
-3. Alternatively, you can enter your API key in the application when prompted
+
+#### Using Netlify (Recommended)
+1. Install Netlify CLI: `npm install -g netlify-cli`
+2. Initialize Netlify in your project: `netlify init`
+3. Set your API key as an environment variable: 
+   ```
+   netlify env:set API_KEY your-api-key-here
+   ```
+4. Deploy your site: `netlify deploy --prod`
+
+This method keeps your API key secure by storing it as an environment variable in Netlify rather than in your code.
 
 ## Running the Application
 
+### Locally
 1. Open `index.html` in a web browser
 2. If no API key is found, you will be prompted to enter one
 3. Start chatting with PAKNING R1
+
+### Using Netlify
+1. Run `netlify dev` to test locally with your Netlify environment variables
+2. Visit the URL provided by Netlify
 
 ## Features
 
@@ -25,6 +41,7 @@ To use this application, you need to set up your API key:
 - Chat history with saving/loading functionality 
 - Responsive design for desktop and mobile use
 - Light/dark theme support
+- Secure API key handling with Netlify
 
 ## Deployment
 
@@ -32,36 +49,9 @@ To use this application, you need to set up your API key:
 
 [![Deploy to Netlify](https://www.netlify.com/img/deploy/button.svg)](https://app.netlify.com/start/deploy?repository=YOUR_REPOSITORY_URL)
 
-### Manual Deployment Steps
-
-1. **Prerequisites**:
-   - Git installed
-   - GitHub, GitLab, or Bitbucket account
-   - Netlify account (sign up at [netlify.com](https://netlify.com))
-
-2. **Push Your Code to Git**:
-   ```bash
-   git init
-   git add .
-   git commit -m "Initial commit"
-   git remote add origin YOUR_REPOSITORY_URL
-   git push -u origin main
-   ```
-
-3. **Deploy on Netlify**:
-   - Log in to Netlify
-   - Click "New site from Git"
-   - Select your Git provider (GitHub, GitLab, etc.)
-   - Authorize Netlify and select your repository
-   - Configure build settings:
-     - Build command: leave empty (not required for this app)
-     - Publish directory: `.`
-   - Click "Deploy site"
-
-4. **Configure Domain (Optional)**:
-   - In Netlify dashboard, go to "Domain settings"
-   - Click "Add custom domain"
-   - Follow the steps to configure your domain
+After deploying, set up your API key as an environment variable in the Netlify dashboard:
+1. Go to Site settings > Build & deploy > Environment
+2. Add a variable with key `API_KEY` and your OpenRouter API key as the value
 
 ## Development
 

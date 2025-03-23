@@ -1,8 +1,18 @@
 [build]
-  publish = "./"
+  publish = "."
 
-# Redirect all 404 errors to index.html for SPA functionality
+# Redirect all URLs to index.html for SPA routing
 [[redirects]]
   from = "/*"
   to = "/index.html"
-  status = 200 
+  status = 200
+
+# Inject environment variables
+[context.production.environment]
+  NETLIFY = "true"
+
+[context.branch-deploy.environment]
+  NETLIFY = "true"
+
+[context.deploy-preview.environment]
+  NETLIFY = "true" 

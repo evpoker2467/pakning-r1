@@ -41,10 +41,15 @@ netlify_deploy/
 
 # Environment variables
 .env
+.env.*
+!.env.example
 
 # Node modules
 node_modules/
 
 # Misc
 .DS_Store
-Thumbs.db 
+Thumbs.db
+
+# Local Netlify folder
+.netlify 
